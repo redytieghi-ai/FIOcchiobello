@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#2563eb">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Flotta">
+    <title>Gestione Flotta Occhiobello</title>
+    
+    <!-- React e Babel -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        * {
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            overflow-x: hidden;
+        }
+        #root {
+            min-height: 100vh;
+            width: 100%;
+        }
+        input, select, button {
+            font-size: 16px; /* Previene zoom su iOS */
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        
+        // Storage wrapper per localStorage
+        const storage = {
+            async get(key) {
+                try {
+                    const value = localStorage.getItem(key);
+                    return value ? { value } : null;
+                } catch (e) {
+                    return null;
+                }
+            },
+            async set(key, value) {
+                try {
+                    localStorage.setItem(key, value);
+                    return { key, value };
+                } catch (e) {
+                    return null;
+                }
+            }
+        };
+        window.storage = storage;
+
+        // Componenti icone SVG
+        const Icon = ({ d, className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={d} />
+            </svg>
+        );
+
+        const Clock = (props) => <Icon d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" {...props} />;
+        const Truck = (props) => <Icon d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" {...props} />;
+        const Check = (props) => <Icon d="M5 13l4 4L19 7" {...props} />;
+        const ArrowLeft = (props) => <Icon d="M10 19l-7-7m0 0l7-7m-7 7h18" {...props} />;
+        const ChevronRight = (props) => <Icon d="M9 5l7 7-7 7" {...props} />;
+        const Users = (props) => <Icon d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" {...props} />;
+        const TrendingUp = (props) => <Icon d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" {...props} />;
+        const Trash2 = (props) => <Icon d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" {...props} />;
+        const Download = (props) => <Icon d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" {...props} />;
+        const Calendar = (props) => <Icon d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" {...props} />;
+
+        // Dati iniziali
+        const INITIAL_VEHICLES = [
+            { id: 'FIO001', name: 'Muletto Still RX 20 18', type: 'muletto', marca: 'Still', modello: 'RX 20 18', matricola: '516224X00026', status: 'available' },
+            { id: 'FIO002', name: 'Muletto Mitsubishi FB 16 KT', type: 'muletto', marca: 'Mitsubishi', modello: 'FB 16 KT', matricola: 'EFB4A25389', status: 'available' },
+            { id: 'FIO003', name: 'Transpallet pedana alto Still EXV SF 14I', type: 'transpallet-pedana-alto', marca: 'Still', modello: 'EXV SF 14I', matricola: 'F20326Y00173', status: 'available' },
+            { id: 'FIO004', name: 'Transpallet pedana alto Still EXV SF 14I', type: 'transpallet-pedana-alto', marca: 'Still', modello: 'EXV SF 14I', matricola: 'F20326X00142', status: 'available' },
+            { id: 'FIO005', name: 'Transpallet pedana alto Still EGV S 14', type: 'transpallet-pedana-alto', marca: 'Still', modello: 'EGV S 14', matricola: 'F20221E00876', status: 'available' },
+            { id: 'FIO006', name: 'Transpallet alto Still EXV 14I C', type: 'transpallet-alto', marca: 'Still', modello: 'EXV 14I C', matricola: 'F20322Y00141', status: 'available' },
+            { id: 'FIO007', name: 'Transpallet alto Still EXV 14I C', type: 'transpallet-alto', marca: 'Still', modello: 'EXV 14I C', matricola: 'F20322Y00137', status: 'available' },
+            { id: 'FIO008', name: 'Transpallet pedana basso Still ECU SF 20', type: 'transpallet-pedana-basso', marca: 'Still', modello: 'ECU SF 20', matricola: 'F20170I00418', status: 'available' },
+            { id: 'FIO009', name: 'Transpallet basso Still ECV 10', type: 'transpallet-basso', marca: 'Still', modello: 'ECV 10', matricola: 'CT0344X00091', status: 'available' },
+            { id: 'FIO010', name: 'Transpallet Still ECH 15C', type: 'transpallet', marca: 'Still', modello: 'ECH 15C', matricola: 'CT2063P40128', status: 'available' },
+            { id: 'FIO011', name: 'Transpallet Still ECH 15C', type: 'transpallet', marca: 'Still', modello: 'ECH 15C', matricola: 'CT2063P40129', status: 'available' },
+            { id: 'FIO012', name: 'Piattaforma Alta 12mt Imer', type: 'piattaforma', marca: 'Imer', modello: 'IM 10090 AC', matricola: 'IM19181585', status: 'available' },
+            { id: 'FIO013', name: 'Piattaforma 10mt Magni', type: 'piattaforma', marca: 'Magni', modello: 'ES1008AC', matricola: '2024/2/00475/VE', status: 'available' },
+            { id: 'FIO014', name: 'Piattaforma 10mt Magni', type: 'piattaforma', marca: 'Magni', modello: 'ES1008AC', matricola: '2024/2/00476/VE', status: 'available' },
+            { id: 'FIO015', name: 'Piattaforma 8mt Magni', type: 'piattaforma', marca: 'Magni', modello: 'ES0807AC', matricola: '2023/2/00259/PD', status: 'available' },
+            { id: 'FIO016', name: 'Piattaforma 8mt Haulotte', type: 'piattaforma', marca: 'Haulotte', modello: 'OPTIMUM 8', matricola: '2023/2/00542/VE', status: 'available' }
+        ];
+
+        const INITIAL_PERSONNEL = [
+            { id: '1', name: 'Redy Tieghi', active: true },
+            { id: '2', name: 'Renzo Candiani', active: true },
+            { id: '3', name: 'Simone Cavallo', active: true },
+            { id: '4', name: 'Marcella Guidetti', active: true },
+            { id: '5', name: 'Arianna Giatti', active: true },
+            { id: '6', name: 'Mirna Soffritti', active: true },
+            { id: '7', name: 'Malisa Laurenti', active: true },
+            { id: '8', name: 'Lorenzo Deserti', active: true },
+            { id: '9', name: 'Matteo Munari', active: true },
+            { id: '10', name: 'Leonardo Giatti', active: true },
+            { id: '11', name: 'Andrea Rambelli', active: true },
+            { id: '12', name: 'Marco Lattoli', active: true },
+            { id: '13', name: 'Davide Bononi', active: true },
+            { id: '16', name: 'Ronnie Bertasi', active: true },
+            { id: '17', name: 'Emiliano Valentini', active: true }
+        ];
+
+        // Componente principale
+        function App() {
+            const [view, setView] = useState('home');
+            const [vehicles, setVehicles] = useState([]);
+            const [personnel, setPersonnel] = useState([]);
+            const [logs, setLogs] = useState([]);
+            const [weeklyReadings, setWeeklyReadings] = useState([]);
+            const [selectedVehicle, setSelectedVehicle] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [newVehicle, setNewVehicle] = useState({ id: '', name: '', type: 'transpallet', marca: '', modello: '', matricola: '' });
+            const [newPerson, setNewPerson] = useState({ name: '' });
+            const [newReading, setNewReading] = useState({ vehicleId: '', hours: '', date: '', personId: '' });
+            const [newLog, setNewLog] = useState({ vehicleId: '', personId: '' });
+            const [filterType, setFilterType] = useState('all');
+
+            useEffect(() => {
+                initializeData();
+            }, []);
+
+            const initializeData = async () => {
+                try {
+                    const vehiclesData = await storage.get('vehicles');
+                    const personnelData = await storage.get('personnel');
+                    const logsData = await storage.get('logs');
+                    const readingsData = await storage.get('weekly-readings');
+                    
+                    if (!vehiclesData) {
+                        await storage.set('vehicles', JSON.stringify(INITIAL_VEHICLES));
+                        setVehicles(INITIAL_VEHICLES);
+                    } else {
+                        setVehicles(JSON.parse(vehiclesData.value));
+                    }
+                    
+                    if (!personnelData) {
+                        await storage.set('personnel', JSON.stringify(INITIAL_PERSONNEL));
+                        setPersonnel(INITIAL_PERSONNEL);
+                    } else {
+                        setPersonnel(JSON.parse(personnelData.value));
+                    }
+                    
+                    setLogs(logsData ? JSON.parse(logsData.value) : []);
+                    setWeeklyReadings(readingsData ? JSON.parse(readingsData.value) : []);
+                    
+                } catch (error) {
+                    console.error('Errore inizializzazione:', error);
+                    setVehicles(INITIAL_VEHICLES);
+                    setPersonnel(INITIAL_PERSONNEL);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const saveVehicles = async (updatedVehicles) => {
+                await storage.set('vehicles', JSON.stringify(updatedVehicles));
+                setVehicles(updatedVehicles);
+            };
+
+            const savePersonnel = async (updatedPersonnel) => {
+                await storage.set('personnel', JSON.stringify(updatedPersonnel));
+                setPersonnel(updatedPersonnel);
+            };
+
+            const saveLogs = async (updatedLogs) => {
+                await storage.set('logs', JSON.stringify(updatedLogs));
+                setLogs(updatedLogs);
+            };
+
+            const saveReadings = async (updatedReadings) => {
+                await storage.set('weekly-readings', JSON.stringify(updatedReadings));
+                setWeeklyReadings(updatedReadings);
+            };
+
+            const takeKey = () => {
+                if (!newLog.vehicleId || !newLog.personId) {
+                    alert('Seleziona sia il mezzo che l\'operatore');
+                    return;
+                }
+                
+                const log = {
+                    id: Date.now().toString(),
+                    vehicleId: newLog.vehicleId,
+                    personId: newLog.personId,
+                    takeTime: new Date().toISOString(),
+                    returnTime: null
+                };
+                
+                const updatedVehicles = vehicles.map(v => 
+                    v.id === newLog.vehicleId ? { ...v, status: 'in-use' } : v
+                );
+                
+                saveVehicles(updatedVehicles);
+                saveLogs([...logs, log]);
+                setNewLog({ vehicleId: '', personId: '' });
+                setView('home');
+            };
+
+            const returnKey = (vehicleId) => {
+                const updatedLogs = logs.map(log => {
+                    if (log.vehicleId === vehicleId && !log.returnTime) {
+                        return { ...log, returnTime: new Date().toISOString() };
+                    }
+                    return log;
+                });
+                
+                const updatedVehicles = vehicles.map(v => 
+                    v.id === vehicleId ? { ...v, status: 'available' } : v
+                );
+                
+                saveVehicles(updatedVehicles);
+                saveLogs(updatedLogs);
+            };
+
+            const addVehicle = () => {
+                if (newVehicle.id && newVehicle.name) {
+                    saveVehicles([...vehicles, { ...newVehicle, status: 'available' }]);
+                    setNewVehicle({ id: '', name: '', type: 'transpallet', marca: '', modello: '', matricola: '' });
+                    alert('Mezzo aggiunto!');
+                }
+            };
+
+            const deleteVehicle = (vehicleId) => {
+                if (confirm('Eliminare questo mezzo?')) {
+                    saveVehicles(vehicles.filter(v => v.id !== vehicleId));
+                }
+            };
+
+            const addPerson = () => {
+                if (newPerson.name) {
+                    savePersonnel([...personnel, { id: Date.now().toString(), name: newPerson.name, active: true }]);
+                    setNewPerson({ name: '' });
+                    alert('Persona aggiunta!');
+                }
+            };
+
+            const deletePerson = (personId) => {
+                if (confirm('Eliminare questa persona?')) {
+                    savePersonnel(personnel.filter(p => p.id !== personId));
+                }
+            };
+
+            const addWeeklyReading = () => {
+                if (newReading.vehicleId && newReading.hours && newReading.date && newReading.personId) {
+                    saveReadings([...weeklyReadings, { id: Date.now().toString(), ...newReading, hours: parseFloat(newReading.hours) }]);
+                    setNewReading({ vehicleId: '', hours: '', date: '', personId: '' });
+                    setView('home');
+                    alert('Lettura salvata!');
+                } else {
+                    alert('Compila tutti i campi');
+                }
+            };
+
+            const exportToCSV = () => {
+                const csvLogs = logs.map(log => {
+                    const vehicle = vehicles.find(v => v.id === log.vehicleId);
+                    const person = personnel.find(p => p.id === log.personId);
+                    return [
+                        formatDateTime(log.takeTime),
+                        log.returnTime ? formatDateTime(log.returnTime) : 'In uso',
+                        log.vehicleId,
+                        vehicle ? `${vehicle.marca} ${vehicle.modello}` : '',
+                        person ? person.name : '',
+                        calculateUsageTime(log.takeTime, log.returnTime)
+                    ].join(';');
+                });
+
+                const csvReadings = weeklyReadings.map(reading => {
+                    const vehicle = vehicles.find(v => v.id === reading.vehicleId);
+                    const person = personnel.find(p => p.id === reading.personId);
+                    return [
+                        new Date(reading.date).toLocaleDateString('it-IT'),
+                        reading.vehicleId,
+                        vehicle ? `${vehicle.marca} ${vehicle.modello}` : '',
+                        reading.hours,
+                        person ? person.name : ''
+                    ].join(';');
+                });
+
+                let csv = "\uFEFFREGISTRO UTILIZZO MEZZI OCCHIOBELLO\n\n";
+                csv += "Data Prelievo;Data Restituzione;Codice;Mezzo;Operatore;Durata\n";
+                csv += csvLogs.join('\n');
+                csv += "\n\n\nLETTURE ORE DISPLAY\n\n";
+                csv += "Data;Codice;Mezzo;Ore Display;Rilevato da\n";
+                csv += csvReadings.join('\n');
+                
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `registro_mezzi_${new Date().toISOString().split('T')[0]}.csv`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            const formatDateTime = (isoString) => {
+                const date = new Date(isoString);
+                return date.toLocaleString('it-IT', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            };
+
+            const calculateUsageTime = (takeTime, returnTime) => {
+                if (!returnTime) return 'In uso';
+                const diff = new Date(returnTime) - new Date(takeTime);
+                const hours = Math.floor(diff / 3600000);
+                const minutes = Math.floor((diff % 3600000) / 60000);
+                return `${hours}h ${minutes}m`;
+            };
+
+            const getPersonName = (personId) => {
+                const person = personnel.find(p => p.id === personId);
+                return person ? person.name : 'N/D';
+            };
+
+            const getFilteredVehicles = () => {
+                if (filterType === 'all') return vehicles;
+                return vehicles.filter(v => v.type === filterType);
+            };
+
+            if (loading) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+                        <div className="text-center">
+                            <Truck className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+                            <p className="text-gray-600 text-lg">Caricamento...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 pb-20">
+                    {/* Header */}
+                    <div className="bg-white shadow-lg sticky top-0 z-50">
+                        <div className="max-w-4xl mx-auto px-4 py-4">
+                            <div className="flex items-center justify-between">
+                                {view !== 'home' && (
+                                    <button onClick={() => setView('home')} className="p-2 hover:bg-gray-100 rounded-lg transition">
+                                        <ArrowLeft className="w-6 h-6 text-gray-600" />
+                                    </button>
+                                )}
+                                <div className="flex-1">
+                                    <h1 className="text-lg md:text-xl font-bold text-gray-800 flex items-center gap-2">
+                                        <Truck className="w-6 h-6 md:w-7 md:h-7 text-blue-600" />
+                                        Flotta Occhiobello
+                                    </h1>
+                                </div>
+                                {view === 'home' && (
+                                    <button onClick={exportToCSV} className="p-2 hover:bg-gray-100 rounded-lg transition">
+                                        <Download className="w-6 h-6 text-gray-600" />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="max-w-4xl mx-auto px-4 py-6">
+                        {/* HOME VIEW */}
+                        {view === 'home' && (
+                            <>
+                                {/* Stats */}
+                                <div className="grid grid-cols-2 gap-4 mb-6">
+                                    <div className="bg-white rounded-xl shadow-md p-4">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm text-gray-500">Disponibili</p>
+                                                <p className="text-3xl font-bold text-green-600">
+                                                    {vehicles.filter(v => v.status === 'available').length}
+                                                </p>
+                                            </div>
+                                            <Check className="w-10 h-10 text-green-600" />
+                                        </div>
+                                    </div>
+                                    <div className="bg-white rounded-xl shadow-md p-4">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm text-gray-500">In uso</p>
+                                                <p className="text-3xl font-bold text-orange-600">
+                                                    {vehicles.filter(v => v.status === 'in-use').length}
+                                                </p>
+                                            </div>
+                                            <Clock className="w-10 h-10 text-orange-600" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Filter */}
+                                <div className="bg-white rounded-xl shadow-md p-4 mb-4">
+                                    <select
+                                        value={filterType}
+                                        onChange={(e) => setFilterType(e.target.value)}
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value="all">Tutti i mezzi ({vehicles.length})</option>
+                                        <option value="muletto">Muletti</option>
+                                        <option value="transpallet-pedana-alto">Transpallet Pedana Alto</option>
+                                        <option value="transpallet-alto">Transpallet Alto</option>
+                                        <option value="transpallet">Transpallet</option>
+                                        <option value="piattaforma">Piattaforme</option>
+                                    </select>
+                                </div>
+
+                                {/* Vehicles List */}
+                                <div className="space-y-3 mb-6">
+                                    {getFilteredVehicles().map(vehicle => {
+                                        const currentLog = logs.find(l => l.vehicleId === vehicle.id && !l.returnTime);
+                                        return (
+                                            <div key={vehicle.id} className="bg-white rounded-xl shadow-md p-4 hover:shadow-lg transition">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <div className="flex-1">
+                                                        <h3 className="font-bold text-gray-800 text-base">{vehicle.id}</h3>
+                                                        <p className="text-sm text-gray-600">{vehicle.marca} {vehicle.modello}</p>
+                                                        {currentLog && (
+                                                            <p className="text-xs text-orange-600 mt-1 font-medium">
+                                                                👤 {getPersonName(currentLog.personId)}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                                        vehicle.status === 'available' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                                                    }`}>
+                                                        {vehicle.status === 'available' ? 'LIBERO' : 'OCCUPATO'}
+                                                    </span>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    {vehicle.status === 'available' ? (
+                                                        <button
+                                                            onClick={() => {
+                                                                setNewLog({ vehicleId: vehicle.id, personId: '' });
+                                                                setView('take-key');
+                                                            }}
+                                                            className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 active:bg-blue-800 transition"
+                                                        >
+                                                            PRELEVA CHIAVE
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => returnKey(vehicle.id)}
+                                                            className="flex-1 bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 active:bg-green-800 transition"
+                                                        >
+                                                            RESTITUISCI CHIAVE
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => {
+                                                            setSelectedVehicle(vehicle);
+                                                            setView('details');
+                                                        }}
+                                                        className="px-4 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 active:bg-gray-300 transition"
+                                                    >
+                                                        <ChevronRight className="w-6 h-6" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="grid grid-cols-2 gap-4 mb-4">
+                                    <button
+                                        onClick={() => setView('manage-vehicles')}
+                                        className="bg-white text-blue-600 py-4 rounded-xl shadow-md font-bold hover:bg-blue-50 active:bg-blue-100 flex items-center justify-center gap-2 transition"
+                                    >
+                                        <Truck className="w-5 h-5" />
+                                        MEZZI
+                                    </button>
+                                    <button
+                                        onClick={() => setView('manage-personnel')}
+                                        className="bg-white text-purple-600 py-4 rounded-xl shadow-md font-bold hover:bg-purple-50 active:bg-purple-100 flex items-center justify-center gap-2 transition"
+                                    >
+                                        <Users className="w-5 h-5" />
+                                        PERSONALE
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={() => setView('add-reading')}
+                                    className="w-full bg-white text-indigo-600 py-4 rounded-xl shadow-md font-bold hover:bg-indigo-50 active:bg-indigo-100 flex items-center justify-center gap-2 transition"
+                                >
+                                    <TrendingUp className="w-5 h-5" />
+                                    LETTURA ORE DISPLAY
+                                </button>
+                                
+                                <button
+                                    onClick={() => setView('registry')}
+                                    className="w-full bg-white text-teal-600 py-4 rounded-xl shadow-md font-bold hover:bg-teal-50 active:bg-teal-100 flex items-center justify-center gap-2 mt-4 transition"
+                                >
+                                    <Calendar className="w-5 h-5" />
+                                    REGISTRO COMPLETO
+                                </button>
+                            </>
+                        )}
+
+                        {/* TAKE KEY VIEW */}
+                        {view === 'take-key' && (
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                                <h2 className="text-2xl font-bold text-gray-800 mb-6">Preleva Chiave</h2>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Mezzo Selezionato</label>
+                                        <div className="px-4 py-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                                            <p className="font-bold text-lg text-blue-900">{newLog.vehicleId}</p>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Seleziona Operatore</label>
+                                        <select
+                                            value={newLog.personId}
+                                            onChange={(e) => setNewLog({...newLog, personId: e.target.value})}
+                                            className="w-full px-4 py-4 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base"
+                                        >
+                                            <option value="">-- Seleziona operatore --</option>
+                                            {personnel.map(p => (
+                                                <option key={p.id} value={p.id}>{p.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <button
+                                        onClick={takeKey}
+                                        className="w-full bg-blue-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-blue-700 active:bg-blue-800 transition shadow-lg"
+                                    >
+                                        ✓ CONFERMA PRELIEVO
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* DETAILS VIEW */}
+                        {view === 'details' && selectedVehicle && (
+                            <div className="space-y-6">
+                                <div className="bg-white rounded-xl shadow-md p-6">
+                                    <h2 className="text-2xl font-bold text-gray-800 mb-2">{selectedVehicle.id}</h2>
+                                    <p className="text-base text-gray-700 font-medium">{selectedVehicle.marca} {selectedVehicle.modello}</p>
+                                    <p className="text-sm text-gray-500 mt-1">Matricola: {selectedVehicle.matricola}</p>
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-md p-6">
+                                    <h3 className="font-bold text-xl text-gray-800 mb-4 flex items-center gap-2">
+                                        <Clock className="w-6 h-6 text-blue-600" />
+                                        Storico Utilizzi
+                                    </h3>
+                                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                                        {logs.filter(l => l.vehicleId === selectedVehicle.id).length > 0 ? (
+                                            logs.filter(l => l.vehicleId === selectedVehicle.id).reverse().map(log => (
+                                                <div key={log.id} className="border-l-4 border-blue-600 pl-4 py-3 bg-blue-50 rounded-r-lg">
+                                                    <p className="text-sm font-bold text-blue-900">{getPersonName(log.personId)}</p>
+                                                    <p className="text-xs text-gray-600 mt-1">📥 {formatDateTime(log.takeTime)}</p>
+                                                    {log.returnTime && (
+                                                        <>
+                                                            <p className="text-xs text-gray-600">📤 {formatDateTime(log.returnTime)}</p>
+                                                            <p className="text-sm font-bold text-blue-600 mt-1">⏱ {calculateUsageTime(log.takeTime, log.returnTime)}</p>
+                                                        </>
+                                                    )}
+                                                    {!log.returnTime && (
+                                                        <p className="text-sm font-bold text-orange-600 mt-1">🔄 In uso</p>
+                                                    )}
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <p className="text-gray-500 text-center py-8">Nessun utilizzo registrato</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* MANAGE VEHICLES VIEW */}
+                        {view === 'manage-vehicles' && (
+                            <div className="space-y-6">
+                                <div className="bg-white rounded-xl shadow-md p-6">
+                                    <h2 className="text-2xl font-bold text-gray-800 mb-6">Aggiungi Nuovo Mezzo</h2>
+                                    <div className="space-y-4">
+                                        <input
+                                            type="text"
+                                            placeholder="Codice (es. FIO017)"
+                                            value={newVehicle.id}
+                                            onChange={(e) => setNewVehicle({...newVehicle, id: e.target.value.toUpperCase()})}
+                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        <input
+                                            type="text"
+                                            placeholder="Nome completo"
+                                            value={newVehicle.name}
+                                            onChange={(e) => setNewVehicle({...newVehicle, name: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        <input
+                                            type="text"
+                                            placeholder="Marca"
+                                            value={newVehicle.marca}
+                                            onChange={(e) => setNewVehicle({...newVehicle, marca: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        <input
+                                            type="text"
+                                            placeholder="Modello"
+                                            value={newVehicle.modello}
+                                            onChange={(e) => setNewVehicle({...newVehicle, modello: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        <input
+                                            type="text"
+                                            placeholder="Matricola"
+                                            value={newVehicle.matricola}
+                                            onChange={(e) => setNewVehicle({...newVehicle, matricola: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        <button
+                                            onClick={addVehicle}
+                                            className="w-full bg-blue-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-blue-700 active:bg-blue-800 transition"
+                                        >
+                                            + AGGIUNGI MEZZO
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-md p-6">
+                                    <h2 className="text-xl font-bold text-gray-800 mb-4">Mezzi Registrati ({vehicles.length})</h2>
+                                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                                        {vehicles.map(v => (
+                                            <div key={v.id} className="flex items-center justify-between p-3 border-2 border-gray-200 rounded-lg hover:bg-gray-50 transition">
+                                                <div>
+                                                    <p className="font-bold text-base">{v.id}</p>
+                                                    <p className="text-sm text-gray-600">{v.marca} {v.modello}</p>
+                                                </div>
+                                                <button onClick={() => deleteVehicle(v.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition active:bg-red-100">
+                                                    <Trash2 className="w-5 h-5" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* MANAGE PERSONNEL VIEW */}
+                        {view === 'manage-personnel' && (
+                            <div className="space-y-6">
+                                <div className="bg-white rounded-xl shadow-md p-6">
+                                    <h2 className="text-2xl font-bold text-gray-800 mb-6">Aggiungi Personale</h2>
+                                    <div className="space-y-4">
+                                        <input
+                                            type="text"
+                                            placeholder="Nome e Cognome"
+                                            value={newPerson.name}
+                                            onChange={(e) => setNewPerson({name: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                        />
+                                        <button
+                                            onClick={addPerson}
+                                            className="w-full bg-purple-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-purple-700 active:bg-purple-800 transition"
+                                        >
+                                            + AGGIUNGI PERSONA
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white rounded-xl shadow-md p-6">
+                                    <h2 className="text-xl font-bold text-gray-800 mb-4">Personale Registrato ({personnel.length})</h2>
+                                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                                        {personnel.map(p => (
+                                            <div key={p.id} className="flex items-center justify-between p-3 border-2 border-gray-200 rounded-lg hover:bg-gray-50 transition">
+                                                <p className="font-medium text-base">{p.name}</p>
+                                                <button onClick={() => deletePerson(p.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition active:bg-red-100">
+                                                    <Trash2 className="w-5 h-5" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ADD READING VIEW */}
+                        {view === 'add-reading' && (
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                                <h2 className="text-2xl font-bold text-gray-800 mb-6">Lettura Ore Display</h2>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Seleziona Mezzo</label>
+                                        <select
+                                            value={newReading.vehicleId}
+                                            onChange={(e) => setNewReading({...newReading, vehicleId: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                        >
+                                            <option value="">-- Seleziona mezzo --</option>
+                                            {vehicles.map(v => (
+                                                <option key={v.id} value={v.id}>{v.id} - {v.marca} {v.modello}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Ore Display</label>
+                                        <input
+                                            type="number"
+                                            step="0.1"
+                                            placeholder="es. 1234.5"
+                                            value={newReading.hours}
+                                            onChange={(e) => setNewReading({...newReading, hours: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Data Lettura</label>
+                                        <input
+                                            type="date"
+                                            value={newReading.date}
+                                            onChange={(e) => setNewReading({...newReading, date: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Rilevato da</label>
+                                        <select
+                                            value={newReading.personId}
+                                            onChange={(e) => setNewReading({...newReading, personId: e.target.value})}
+                                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                        >
+                                            <option value="">-- Seleziona operatore --</option>
+                                            {personnel.map(p => (
+                                                <option key={p.id} value={p.id}>{p.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <button
+                                        onClick={addWeeklyReading}
+                                        className="w-full bg-indigo-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-indigo-700 active:bg-indigo-800 transition"
+                                    >
+                                        ✓ SALVA LETTURA
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* REGISTRY VIEW */}
+                        {view === 'registry' && (
+                            <div className="space-y-6">
+                                {/* Registro Prelievi */}
+                                <div className="bg-white rounded-xl shadow-md p-6">
+                                    <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                        <Clock className="w-6 h-6 text-blue-600" />
+                                        Registro Prelievi/Restituzioni
+                                    </h2>
+                                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                                        {logs.length > 0 ? (
+                                            logs.slice().reverse().map(log => {
+                                                const vehicle = vehicles.find(v => v.id === log.vehicleId);
+                                                return (
+                                                    <div key={log.id} className="border-l-4 border-blue-600 pl-4 py-3 bg-blue-50 rounded-r-lg">
+                                                        <div className="flex items-start justify-between">
+                                                            <div className="flex-1">
+                                                                <p className="font-bold text-gray-800">{vehicle?.id || log.vehicleId}</p>
+                                                                <p className="text-sm text-gray-600">{vehicle?.marca} {vehicle?.modello}</p>
+                                                                <p className="text-sm text-blue-700 mt-1 font-medium">👤 {getPersonName(log.personId)}</p>
+                                                                <div className="mt-2 text-xs text-gray-600 space-y-1">
+                                                                    <p>📥 Prelievo: {formatDateTime(log.takeTime)}</p>
+                                                                    {log.returnTime ? (
+                                                                        <>
+                                                                            <p>📤 Restituzione: {formatDateTime(log.returnTime)}</p>
+                                                                            <p className="font-bold text-blue-600">⏱ Durata: {calculateUsageTime(log.takeTime, log.returnTime)}</p>
+                                                                        </>
+                                                                    ) : (
+                                                                        <p className="font-bold text-orange-600">🔄 In uso</p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <p className="text-gray-500 text-center py-8 text-base">Nessun prelievo registrato</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Registro Letture */}
+                                <div className="bg-white rounded-xl shadow-md p-6">
+                                    <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                        <TrendingUp className="w-6 h-6 text-indigo-600" />
+                                        Registro Letture Ore Display
+                                    </h2>
+                                    <div className="space-y-3 max-h-96 overflow-y-auto">
+                                        {weeklyReadings.length > 0 ? (
+                                            weeklyReadings.slice().reverse().map(reading => {
+                                                const vehicle = vehicles.find(v => v.id === reading.vehicleId);
+                                                return (
+                                                    <div key={reading.id} className="border-l-4 border-indigo-600 pl-4 py-3 bg-indigo-50 rounded-r-lg">
+                                                        <div className="flex items-start justify-between">
+                                                            <div className="flex-1">
+                                                                <p className="font-bold text-gray-800">{vehicle?.id || reading.vehicleId}</p>
+                                                                <p className="text-sm text-gray-600">{vehicle?.marca} {vehicle?.modello}</p>
+                                                                <div className="mt-2 text-sm space-y-1">
+                                                                    <p className="text-gray-600">📅 Data: {new Date(reading.date).toLocaleDateString('it-IT')}</p>
+                                                                    <p className="text-gray-600">👤 Rilevato da: {getPersonName(reading.personId)}</p>
+                                                                    <p className="text-xl font-bold text-indigo-600">⏰ {reading.hours} ore</p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <p className="text-gray-500 text-center py-8 text-base">Nessuna lettura registrata</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Export Button */}
+                                <button
+                                    onClick={exportToCSV}
+                                    className="w-full bg-green-600 text-white py-4 rounded-xl shadow-md font-bold text-lg hover:bg-green-700 active:bg-green-800 flex items-center justify-center gap-2 transition"
+                                >
+                                    <Download className="w-6 h-6" />
+                                    ESPORTA REGISTRO CSV
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // Render app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
