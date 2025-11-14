@@ -9,6 +9,10 @@
     <meta name="apple-mobile-web-app-title" content="Flotta">
     <title>Gestione Flotta Occhiobello</title>
     
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
     <!-- React e Babel -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -18,22 +22,12 @@
     <script src="https://cdn.tailwindcss.com"></script>
     
     <style>
-        * {
-            -webkit-tap-highlight-color: transparent;
-        }
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            overflow-x: hidden;
-        }
-        #root {
-            min-height: 100vh;
-            width: 100%;
-        }
-        input, select, button {
-            font-size: 16px; /* Previene zoom su iOS */
-        }
+        * { -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow-x: hidden; }
+        #root { min-height: 100vh; width: 100%; }
+        input, select, button { font-size: 16px; }
+        .pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
     </style>
 </head>
 <body>
@@ -42,28 +36,20 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
         
-        // Storage wrapper per localStorage
-        const storage = {
-            async get(key) {
-                try {
-                    const value = localStorage.getItem(key);
-                    return value ? { value } : null;
-                } catch (e) {
-                    return null;
-                }
-            },
-            async set(key, value) {
-                try {
-                    localStorage.setItem(key, value);
-                    return { key, value };
-                } catch (e) {
-                    return null;
-                }
-            }
+        // Inizializza Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyArHFj5ojGvHRqNySnN5SpTjx60k37vCzc",
+            authDomain: "flotta-occhiobello.firebaseapp.com",
+            projectId: "flotta-occhiobello",
+            storageBucket: "flotta-occhiobello.firebasestorage.app",
+            messagingSenderId: "225402099604",
+            appId: "1:225402099604:web:6dada6392125e36d886181"
         };
-        window.storage = storage;
 
-        // Componenti icone SVG
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Icone SVG
         const Icon = ({ d, className }) => (
             <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={d} />
@@ -80,6 +66,7 @@
         const Trash2 = (props) => <Icon d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" {...props} />;
         const Download = (props) => <Icon d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" {...props} />;
         const Calendar = (props) => <Icon d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" {...props} />;
+        const RefreshCw = (props) => <Icon d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" {...props} />;
 
         // Dati iniziali
         const INITIAL_VEHICLES = [
@@ -128,143 +115,236 @@
             const [weeklyReadings, setWeeklyReadings] = useState([]);
             const [selectedVehicle, setSelectedVehicle] = useState(null);
             const [loading, setLoading] = useState(true);
+            const [syncing, setSyncing] = useState(false);
             const [newVehicle, setNewVehicle] = useState({ id: '', name: '', type: 'transpallet', marca: '', modello: '', matricola: '' });
             const [newPerson, setNewPerson] = useState({ name: '' });
             const [newReading, setNewReading] = useState({ vehicleId: '', hours: '', date: '', personId: '' });
             const [newLog, setNewLog] = useState({ vehicleId: '', personId: '' });
             const [filterType, setFilterType] = useState('all');
 
+            // Inizializza dati e ascolta cambiamenti in tempo reale
             useEffect(() => {
                 initializeData();
+                
+                // Listener in tempo reale per vehicles
+                const unsubVehicles = db.collection('vehicles').onSnapshot((snapshot) => {
+                    const vehiclesData = [];
+                    snapshot.forEach((doc) => {
+                        vehiclesData.push({ ...doc.data(), id: doc.id });
+                    });
+                    if (vehiclesData.length > 0) {
+                        setVehicles(vehiclesData);
+                    }
+                });
+
+                // Listener per personnel
+                const unsubPersonnel = db.collection('personnel').onSnapshot((snapshot) => {
+                    const personnelData = [];
+                    snapshot.forEach((doc) => {
+                        personnelData.push({ ...doc.data(), id: doc.id });
+                    });
+                    if (personnelData.length > 0) {
+                        setPersonnel(personnelData);
+                    }
+                });
+
+                // Listener per logs
+                const unsubLogs = db.collection('logs').orderBy('takeTime', 'desc').onSnapshot((snapshot) => {
+                    const logsData = [];
+                    snapshot.forEach((doc) => {
+                        logsData.push({ ...doc.data(), id: doc.id });
+                    });
+                    setLogs(logsData);
+                });
+
+                // Listener per readings
+                const unsubReadings = db.collection('readings').orderBy('date', 'desc').onSnapshot((snapshot) => {
+                    const readingsData = [];
+                    snapshot.forEach((doc) => {
+                        readingsData.push({ ...doc.data(), id: doc.id });
+                    });
+                    setWeeklyReadings(readingsData);
+                });
+
+                return () => {
+                    unsubVehicles();
+                    unsubPersonnel();
+                    unsubLogs();
+                    unsubReadings();
+                };
             }, []);
 
             const initializeData = async () => {
                 try {
-                    const vehiclesData = await storage.get('vehicles');
-                    const personnelData = await storage.get('personnel');
-                    const logsData = await storage.get('logs');
-                    const readingsData = await storage.get('weekly-readings');
-                    
-                    if (!vehiclesData) {
-                        await storage.set('vehicles', JSON.stringify(INITIAL_VEHICLES));
+                    // Controlla se esistono già dati
+                    const vehiclesSnapshot = await db.collection('vehicles').get();
+                    const personnelSnapshot = await db.collection('personnel').get();
+
+                    if (vehiclesSnapshot.empty) {
+                        // Carica mezzi iniziali
+                        const batch = db.batch();
+                        INITIAL_VEHICLES.forEach((vehicle) => {
+                            const docRef = db.collection('vehicles').doc(vehicle.id);
+                            batch.set(docRef, vehicle);
+                        });
+                        await batch.commit();
                         setVehicles(INITIAL_VEHICLES);
-                    } else {
-                        setVehicles(JSON.parse(vehiclesData.value));
                     }
-                    
-                    if (!personnelData) {
-                        await storage.set('personnel', JSON.stringify(INITIAL_PERSONNEL));
+
+                    if (personnelSnapshot.empty) {
+                        // Carica personale iniziale
+                        const batch = db.batch();
+                        INITIAL_PERSONNEL.forEach((person) => {
+                            const docRef = db.collection('personnel').doc(person.id);
+                            batch.set(docRef, person);
+                        });
+                        await batch.commit();
                         setPersonnel(INITIAL_PERSONNEL);
-                    } else {
-                        setPersonnel(JSON.parse(personnelData.value));
                     }
-                    
-                    setLogs(logsData ? JSON.parse(logsData.value) : []);
-                    setWeeklyReadings(readingsData ? JSON.parse(readingsData.value) : []);
-                    
                 } catch (error) {
                     console.error('Errore inizializzazione:', error);
-                    setVehicles(INITIAL_VEHICLES);
-                    setPersonnel(INITIAL_PERSONNEL);
                 } finally {
                     setLoading(false);
                 }
             };
 
-            const saveVehicles = async (updatedVehicles) => {
-                await storage.set('vehicles', JSON.stringify(updatedVehicles));
-                setVehicles(updatedVehicles);
-            };
-
-            const savePersonnel = async (updatedPersonnel) => {
-                await storage.set('personnel', JSON.stringify(updatedPersonnel));
-                setPersonnel(updatedPersonnel);
-            };
-
-            const saveLogs = async (updatedLogs) => {
-                await storage.set('logs', JSON.stringify(updatedLogs));
-                setLogs(updatedLogs);
-            };
-
-            const saveReadings = async (updatedReadings) => {
-                await storage.set('weekly-readings', JSON.stringify(updatedReadings));
-                setWeeklyReadings(updatedReadings);
-            };
-
-            const takeKey = () => {
+            const takeKey = async () => {
                 if (!newLog.vehicleId || !newLog.personId) {
                     alert('Seleziona sia il mezzo che l\'operatore');
                     return;
                 }
                 
-                const log = {
-                    id: Date.now().toString(),
-                    vehicleId: newLog.vehicleId,
-                    personId: newLog.personId,
-                    takeTime: new Date().toISOString(),
-                    returnTime: null
-                };
-                
-                const updatedVehicles = vehicles.map(v => 
-                    v.id === newLog.vehicleId ? { ...v, status: 'in-use' } : v
-                );
-                
-                saveVehicles(updatedVehicles);
-                saveLogs([...logs, log]);
-                setNewLog({ vehicleId: '', personId: '' });
-                setView('home');
-            };
-
-            const returnKey = (vehicleId) => {
-                const updatedLogs = logs.map(log => {
-                    if (log.vehicleId === vehicleId && !log.returnTime) {
-                        return { ...log, returnTime: new Date().toISOString() };
-                    }
-                    return log;
-                });
-                
-                const updatedVehicles = vehicles.map(v => 
-                    v.id === vehicleId ? { ...v, status: 'available' } : v
-                );
-                
-                saveVehicles(updatedVehicles);
-                saveLogs(updatedLogs);
-            };
-
-            const addVehicle = () => {
-                if (newVehicle.id && newVehicle.name) {
-                    saveVehicles([...vehicles, { ...newVehicle, status: 'available' }]);
-                    setNewVehicle({ id: '', name: '', type: 'transpallet', marca: '', modello: '', matricola: '' });
-                    alert('Mezzo aggiunto!');
-                }
-            };
-
-            const deleteVehicle = (vehicleId) => {
-                if (confirm('Eliminare questo mezzo?')) {
-                    saveVehicles(vehicles.filter(v => v.id !== vehicleId));
-                }
-            };
-
-            const addPerson = () => {
-                if (newPerson.name) {
-                    savePersonnel([...personnel, { id: Date.now().toString(), name: newPerson.name, active: true }]);
-                    setNewPerson({ name: '' });
-                    alert('Persona aggiunta!');
-                }
-            };
-
-            const deletePerson = (personId) => {
-                if (confirm('Eliminare questa persona?')) {
-                    savePersonnel(personnel.filter(p => p.id !== personId));
-                }
-            };
-
-            const addWeeklyReading = () => {
-                if (newReading.vehicleId && newReading.hours && newReading.date && newReading.personId) {
-                    saveReadings([...weeklyReadings, { id: Date.now().toString(), ...newReading, hours: parseFloat(newReading.hours) }]);
-                    setNewReading({ vehicleId: '', hours: '', date: '', personId: '' });
+                setSyncing(true);
+                try {
+                    const log = {
+                        vehicleId: newLog.vehicleId,
+                        personId: newLog.personId,
+                        takeTime: new Date().toISOString(),
+                        returnTime: null
+                    };
+                    
+                    // Aggiungi log
+                    await db.collection('logs').add(log);
+                    
+                    // Aggiorna stato veicolo
+                    await db.collection('vehicles').doc(newLog.vehicleId).update({ status: 'in-use' });
+                    
+                    setNewLog({ vehicleId: '', personId: '' });
                     setView('home');
-                    alert('Lettura salvata!');
+                } catch (error) {
+                    console.error('Errore prelievo:', error);
+                    alert('Errore durante il prelievo');
+                } finally {
+                    setSyncing(false);
+                }
+            };
+
+            const returnKey = async (vehicleId) => {
+                setSyncing(true);
+                try {
+                    // Trova il log aperto per questo veicolo
+                    const logsSnapshot = await db.collection('logs')
+                        .where('vehicleId', '==', vehicleId)
+                        .where('returnTime', '==', null)
+                        .get();
+                    
+                    const batch = db.batch();
+                    logsSnapshot.forEach((doc) => {
+                        batch.update(doc.ref, { returnTime: new Date().toISOString() });
+                    });
+                    
+                    // Aggiorna stato veicolo
+                    const vehicleRef = db.collection('vehicles').doc(vehicleId);
+                    batch.update(vehicleRef, { status: 'available' });
+                    
+                    await batch.commit();
+                } catch (error) {
+                    console.error('Errore restituzione:', error);
+                    alert('Errore durante la restituzione');
+                } finally {
+                    setSyncing(false);
+                }
+            };
+
+            const addVehicle = async () => {
+                if (newVehicle.id && newVehicle.name) {
+                    setSyncing(true);
+                    try {
+                        await db.collection('vehicles').doc(newVehicle.id).set({
+                            ...newVehicle,
+                            status: 'available'
+                        });
+                        setNewVehicle({ id: '', name: '', type: 'transpallet', marca: '', modello: '', matricola: '' });
+                        alert('Mezzo aggiunto!');
+                    } catch (error) {
+                        console.error('Errore aggiunta mezzo:', error);
+                        alert('Errore durante l\'aggiunta');
+                    } finally {
+                        setSyncing(false);
+                    }
+                }
+            };
+
+            const deleteVehicle = async (vehicleId) => {
+                if (confirm('Eliminare questo mezzo?')) {
+                    setSyncing(true);
+                    try {
+                        await db.collection('vehicles').doc(vehicleId).delete();
+                    } catch (error) {
+                        console.error('Errore eliminazione:', error);
+                    } finally {
+                        setSyncing(false);
+                    }
+                }
+            };
+
+            const addPerson = async () => {
+                if (newPerson.name) {
+                    setSyncing(true);
+                    try {
+                        await db.collection('personnel').add({
+                            name: newPerson.name,
+                            active: true
+                        });
+                        setNewPerson({ name: '' });
+                        alert('Persona aggiunta!');
+                    } catch (error) {
+                        console.error('Errore aggiunta persona:', error);
+                    } finally {
+                        setSyncing(false);
+                    }
+                }
+            };
+
+            const deletePerson = async (personId) => {
+                if (confirm('Eliminare questa persona?')) {
+                    setSyncing(true);
+                    try {
+                        await db.collection('personnel').doc(personId).delete();
+                    } catch (error) {
+                        console.error('Errore eliminazione:', error);
+                    } finally {
+                        setSyncing(false);
+                    }
+                }
+            };
+
+            const addWeeklyReading = async () => {
+                if (newReading.vehicleId && newReading.hours && newReading.date && newReading.personId) {
+                    setSyncing(true);
+                    try {
+                        await db.collection('readings').add({
+                            ...newReading,
+                            hours: parseFloat(newReading.hours)
+                        });
+                        setNewReading({ vehicleId: '', hours: '', date: '', personId: '' });
+                        setView('home');
+                        alert('Lettura salvata!');
+                    } catch (error) {
+                        console.error('Errore salvataggio lettura:', error);
+                    } finally {
+                        setSyncing(false);
+                    }
                 } else {
                     alert('Compila tutti i campi');
                 }
@@ -345,8 +425,9 @@
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
                         <div className="text-center">
-                            <Truck className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-                            <p className="text-gray-600 text-lg">Caricamento...</p>
+                            <Truck className="w-16 h-16 text-blue-600 mx-auto mb-4 pulse" />
+                            <p className="text-gray-600 text-lg font-medium">Caricamento...</p>
+                            <p className="text-sm text-gray-500 mt-2">Connessione al database</p>
                         </div>
                     </div>
                 );
@@ -354,8 +435,16 @@
 
             return (
                 <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 pb-20">
+                    {/* Sync Indicator */}
+                    {syncing && (
+                        <div className="fixed top-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 flex items-center gap-2">
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span className="text-sm font-medium">Sincronizzazione...</span>
+                        </div>
+                    )}
+
                     {/* Header */}
-                    <div className="bg-white shadow-lg sticky top-0 z-50">
+                    <div className="bg-white shadow-lg sticky top-0 z-40">
                         <div className="max-w-4xl mx-auto px-4 py-4">
                             <div className="flex items-center justify-between">
                                 {view !== 'home' && (
@@ -367,6 +456,7 @@
                                     <h1 className="text-lg md:text-xl font-bold text-gray-800 flex items-center gap-2">
                                         <Truck className="w-6 h-6 md:w-7 md:h-7 text-blue-600" />
                                         Flotta Occhiobello
+                                        <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">LIVE</span>
                                     </h1>
                                 </div>
                                 {view === 'home' && (
@@ -454,6 +544,7 @@
                                                                 setView('take-key');
                                                             }}
                                                             className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 active:bg-blue-800 transition"
+                                                            disabled={syncing}
                                                         >
                                                             PRELEVA CHIAVE
                                                         </button>
@@ -461,6 +552,7 @@
                                                         <button
                                                             onClick={() => returnKey(vehicle.id)}
                                                             className="flex-1 bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 active:bg-green-800 transition"
+                                                            disabled={syncing}
                                                         >
                                                             RESTITUISCI CHIAVE
                                                         </button>
@@ -541,7 +633,8 @@
                                     </div>
                                     <button
                                         onClick={takeKey}
-                                        className="w-full bg-blue-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-blue-700 active:bg-blue-800 transition shadow-lg"
+                                        disabled={syncing}
+                                        className="w-full bg-blue-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-blue-700 active:bg-blue-800 transition shadow-lg disabled:opacity-50"
                                     >
                                         ✓ CONFERMA PRELIEVO
                                     </button>
@@ -565,17 +658,16 @@
                                     </h3>
                                     <div className="space-y-3 max-h-96 overflow-y-auto">
                                         {logs.filter(l => l.vehicleId === selectedVehicle.id).length > 0 ? (
-                                            logs.filter(l => l.vehicleId === selectedVehicle.id).reverse().map(log => (
+                                            logs.filter(l => l.vehicleId === selectedVehicle.id).map(log => (
                                                 <div key={log.id} className="border-l-4 border-blue-600 pl-4 py-3 bg-blue-50 rounded-r-lg">
                                                     <p className="text-sm font-bold text-blue-900">{getPersonName(log.personId)}</p>
                                                     <p className="text-xs text-gray-600 mt-1">📥 {formatDateTime(log.takeTime)}</p>
-                                                    {log.returnTime && (
+                                                    {log.returnTime ? (
                                                         <>
                                                             <p className="text-xs text-gray-600">📤 {formatDateTime(log.returnTime)}</p>
                                                             <p className="text-sm font-bold text-blue-600 mt-1">⏱ {calculateUsageTime(log.takeTime, log.returnTime)}</p>
                                                         </>
-                                                    )}
-                                                    {!log.returnTime && (
+                                                    ) : (
                                                         <p className="text-sm font-bold text-orange-600 mt-1">🔄 In uso</p>
                                                     )}
                                                 </div>
@@ -631,7 +723,8 @@
                                         />
                                         <button
                                             onClick={addVehicle}
-                                            className="w-full bg-blue-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-blue-700 active:bg-blue-800 transition"
+                                            disabled={syncing}
+                                            className="w-full bg-blue-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-blue-700 active:bg-blue-800 transition disabled:opacity-50"
                                         >
                                             + AGGIUNGI MEZZO
                                         </button>
@@ -647,7 +740,7 @@
                                                     <p className="font-bold text-base">{v.id}</p>
                                                     <p className="text-sm text-gray-600">{v.marca} {v.modello}</p>
                                                 </div>
-                                                <button onClick={() => deleteVehicle(v.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition active:bg-red-100">
+                                                <button onClick={() => deleteVehicle(v.id)} disabled={syncing} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition active:bg-red-100 disabled:opacity-50">
                                                     <Trash2 className="w-5 h-5" />
                                                 </button>
                                             </div>
@@ -672,7 +765,8 @@
                                         />
                                         <button
                                             onClick={addPerson}
-                                            className="w-full bg-purple-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-purple-700 active:bg-purple-800 transition"
+                                            disabled={syncing}
+                                            className="w-full bg-purple-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-purple-700 active:bg-purple-800 transition disabled:opacity-50"
                                         >
                                             + AGGIUNGI PERSONA
                                         </button>
@@ -685,7 +779,7 @@
                                         {personnel.map(p => (
                                             <div key={p.id} className="flex items-center justify-between p-3 border-2 border-gray-200 rounded-lg hover:bg-gray-50 transition">
                                                 <p className="font-medium text-base">{p.name}</p>
-                                                <button onClick={() => deletePerson(p.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition active:bg-red-100">
+                                                <button onClick={() => deletePerson(p.id)} disabled={syncing} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition active:bg-red-100 disabled:opacity-50">
                                                     <Trash2 className="w-5 h-5" />
                                                 </button>
                                             </div>
@@ -748,7 +842,8 @@
                                     </div>
                                     <button
                                         onClick={addWeeklyReading}
-                                        className="w-full bg-indigo-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-indigo-700 active:bg-indigo-800 transition"
+                                        disabled={syncing}
+                                        className="w-full bg-indigo-600 text-white py-4 rounded-lg font-bold text-lg hover:bg-indigo-700 active:bg-indigo-800 transition disabled:opacity-50"
                                     >
                                         ✓ SALVA LETTURA
                                     </button>
@@ -759,7 +854,6 @@
                         {/* REGISTRY VIEW */}
                         {view === 'registry' && (
                             <div className="space-y-6">
-                                {/* Registro Prelievi */}
                                 <div className="bg-white rounded-xl shadow-md p-6">
                                     <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
                                         <Clock className="w-6 h-6 text-blue-600" />
@@ -767,7 +861,7 @@
                                     </h2>
                                     <div className="space-y-3 max-h-96 overflow-y-auto">
                                         {logs.length > 0 ? (
-                                            logs.slice().reverse().map(log => {
+                                            logs.map(log => {
                                                 const vehicle = vehicles.find(v => v.id === log.vehicleId);
                                                 return (
                                                     <div key={log.id} className="border-l-4 border-blue-600 pl-4 py-3 bg-blue-50 rounded-r-lg">
@@ -798,7 +892,6 @@
                                     </div>
                                 </div>
 
-                                {/* Registro Letture */}
                                 <div className="bg-white rounded-xl shadow-md p-6">
                                     <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
                                         <TrendingUp className="w-6 h-6 text-indigo-600" />
@@ -806,7 +899,7 @@
                                     </h2>
                                     <div className="space-y-3 max-h-96 overflow-y-auto">
                                         {weeklyReadings.length > 0 ? (
-                                            weeklyReadings.slice().reverse().map(reading => {
+                                            weeklyReadings.map(reading => {
                                                 const vehicle = vehicles.find(v => v.id === reading.vehicleId);
                                                 return (
                                                     <div key={reading.id} className="border-l-4 border-indigo-600 pl-4 py-3 bg-indigo-50 rounded-r-lg">
@@ -830,7 +923,6 @@
                                     </div>
                                 </div>
 
-                                {/* Export Button */}
                                 <button
                                     onClick={exportToCSV}
                                     className="w-full bg-green-600 text-white py-4 rounded-xl shadow-md font-bold text-lg hover:bg-green-700 active:bg-green-800 flex items-center justify-center gap-2 transition"
@@ -845,7 +937,6 @@
             );
         }
 
-        // Render app
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
