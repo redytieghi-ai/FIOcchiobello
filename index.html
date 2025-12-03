@@ -350,6 +350,36 @@
                 }
             };
 
+            const deleteLog = async (logId) => {
+                if (confirm('Eliminare questo registro? Questa azione non può essere annullata.')) {
+                    setSyncing(true);
+                    try {
+                        await db.collection('logs').doc(logId).delete();
+                        alert('Registro eliminato!');
+                    } catch (error) {
+                        console.error('Errore eliminazione log:', error);
+                        alert('Errore durante l\'eliminazione');
+                    } finally {
+                        setSyncing(false);
+                    }
+                }
+            };
+
+            const deleteReading = async (readingId) => {
+                if (confirm('Eliminare questa lettura? Questa azione non può essere annullata.')) {
+                    setSyncing(true);
+                    try {
+                        await db.collection('readings').doc(readingId).delete();
+                        alert('Lettura eliminata!');
+                    } catch (error) {
+                        console.error('Errore eliminazione lettura:', error);
+                        alert('Errore durante l\'eliminazione');
+                    } finally {
+                        setSyncing(false);
+                    }
+                }
+            };
+
             const exportToCSV = () => {
                 const csvLogs = logs.map(log => {
                     const vehicle = vehicles.find(v => v.id === log.vehicleId);
@@ -359,6 +389,7 @@
                         log.returnTime ? formatDateTime(log.returnTime) : 'In uso',
                         log.vehicleId,
                         vehicle ? `${vehicle.marca} ${vehicle.modello}` : '',
+                        vehicle ? vehicle.matricola : '',
                         person ? person.name : '',
                         calculateUsageTime(log.takeTime, log.returnTime)
                     ].join(';');
@@ -371,16 +402,17 @@
                         new Date(reading.date).toLocaleDateString('it-IT'),
                         reading.vehicleId,
                         vehicle ? `${vehicle.marca} ${vehicle.modello}` : '',
+                        vehicle ? vehicle.matricola : '',
                         reading.hours,
                         person ? person.name : ''
                     ].join(';');
                 });
 
                 let csv = "\uFEFFREGISTRO UTILIZZO MEZZI OCCHIOBELLO\n\n";
-                csv += "Data Prelievo;Data Restituzione;Codice;Mezzo;Operatore;Durata\n";
+                csv += "Data Prelievo;Data Restituzione;Codice;Mezzo;Matricola;Operatore;Durata\n";
                 csv += csvLogs.join('\n');
                 csv += "\n\n\nLETTURE ORE DISPLAY\n\n";
-                csv += "Data;Codice;Mezzo;Ore Display;Rilevato da\n";
+                csv += "Data;Codice;Mezzo;Matricola;Ore Display;Rilevato da\n";
                 csv += csvReadings.join('\n');
                 
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -864,11 +896,20 @@
                                             logs.map(log => {
                                                 const vehicle = vehicles.find(v => v.id === log.vehicleId);
                                                 return (
-                                                    <div key={log.id} className="border-l-4 border-blue-600 pl-4 py-3 bg-blue-50 rounded-r-lg">
-                                                        <div className="flex items-start justify-between">
+                                                    <div key={log.id} className="border-l-4 border-blue-600 pl-4 py-3 bg-blue-50 rounded-r-lg relative">
+                                                        <button
+                                                            onClick={() => deleteLog(log.id)}
+                                                            disabled={syncing}
+                                                            className="absolute top-2 right-2 p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition disabled:opacity-50"
+                                                            title="Elimina registro"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                        <div className="flex items-start justify-between pr-10">
                                                             <div className="flex-1">
                                                                 <p className="font-bold text-gray-800">{vehicle?.id || log.vehicleId}</p>
                                                                 <p className="text-sm text-gray-600">{vehicle?.marca} {vehicle?.modello}</p>
+                                                                <p className="text-xs text-gray-500">Mat: {vehicle?.matricola}</p>
                                                                 <p className="text-sm text-blue-700 mt-1 font-medium">👤 {getPersonName(log.personId)}</p>
                                                                 <div className="mt-2 text-xs text-gray-600 space-y-1">
                                                                     <p>📥 Prelievo: {formatDateTime(log.takeTime)}</p>
@@ -902,11 +943,20 @@
                                             weeklyReadings.map(reading => {
                                                 const vehicle = vehicles.find(v => v.id === reading.vehicleId);
                                                 return (
-                                                    <div key={reading.id} className="border-l-4 border-indigo-600 pl-4 py-3 bg-indigo-50 rounded-r-lg">
-                                                        <div className="flex items-start justify-between">
+                                                    <div key={reading.id} className="border-l-4 border-indigo-600 pl-4 py-3 bg-indigo-50 rounded-r-lg relative">
+                                                        <button
+                                                            onClick={() => deleteReading(reading.id)}
+                                                            disabled={syncing}
+                                                            className="absolute top-2 right-2 p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition disabled:opacity-50"
+                                                            title="Elimina lettura"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                        <div className="flex items-start justify-between pr-10">
                                                             <div className="flex-1">
                                                                 <p className="font-bold text-gray-800">{vehicle?.id || reading.vehicleId}</p>
                                                                 <p className="text-sm text-gray-600">{vehicle?.marca} {vehicle?.modello}</p>
+                                                                <p className="text-xs text-gray-500">Mat: {vehicle?.matricola}</p>
                                                                 <div className="mt-2 text-sm space-y-1">
                                                                     <p className="text-gray-600">📅 Data: {new Date(reading.date).toLocaleDateString('it-IT')}</p>
                                                                     <p className="text-gray-600">👤 Rilevato da: {getPersonName(reading.personId)}</p>
