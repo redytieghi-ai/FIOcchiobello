@@ -365,7 +365,37 @@
                 }
             };
 
-            const deleteReading = async (readingId) => {
+            const calculateWeeklyUsage = (currentHours, previousHours) => {
+                if (!previousHours) return 'Prima lettura';
+                const diff = currentHours - previousHours;
+                if (diff < 0) return 'Errore: ore negative';
+                const hours = Math.floor(diff);
+                const minutes = Math.round((diff - hours) * 60);
+                return `${hours}:${minutes.toString().padStart(2, '0')}`;
+            };
+
+            const getReadingsByVehicle = () => {
+                // Raggruppa letture per veicolo
+                const grouped = {};
+                weeklyReadings.forEach(reading => {
+                    if (!grouped[reading.vehicleId]) {
+                        grouped[reading.vehicleId] = [];
+                    }
+                    grouped[reading.vehicleId].push(reading);
+                });
+
+                // Ordina veicoli per codice e letture per data
+                const sortedVehicles = Object.keys(grouped).sort();
+                const result = sortedVehicles.map(vehicleId => {
+                    const vehicle = vehicles.find(v => v.id === vehicleId);
+                    const readings = grouped[vehicleId].sort((a, b) => 
+                        new Date(a.date) - new Date(b.date)
+                    );
+                    return { vehicle, readings };
+                });
+
+                return result;
+            };
                 if (confirm('Eliminare questa lettura? Questa azione non può essere annullata.')) {
                     setSyncing(true);
                     try {
@@ -408,11 +438,32 @@
                     ].join(';');
                 });
 
+                const csvReadings = [];
+                getReadingsByVehicle().forEach(({ vehicle, readings }) => {
+                    readings.forEach((reading, index) => {
+                        const previousReading = index > 0 ? readings[index - 1] : null;
+                        const weeklyUsage = previousReading 
+                            ? calculateWeeklyUsage(reading.hours, previousReading.hours)
+                            : 'Prima lettura';
+                        const person = personnel.find(p => p.id === reading.personId);
+                        
+                        csvReadings.push([
+                            new Date(reading.date).toLocaleDateString('it-IT'),
+                            reading.vehicleId,
+                            vehicle ? `${vehicle.marca} ${vehicle.modello}` : '',
+                            vehicle ? vehicle.matricola : '',
+                            reading.hours,
+                            weeklyUsage,
+                            person ? person.name : ''
+                        ].join(';'));
+                    });
+                });
+
                 let csv = "\uFEFFREGISTRO UTILIZZO MEZZI OCCHIOBELLO\n\n";
                 csv += "Data Prelievo;Data Restituzione;Codice;Mezzo;Matricola;Operatore;Durata\n";
                 csv += csvLogs.join('\n');
                 csv += "\n\n\nLETTURE ORE DISPLAY\n\n";
-                csv += "Data;Codice;Mezzo;Matricola;Ore Display;Rilevato da\n";
+                csv += "Data;Codice;Mezzo;Matricola;Ore Display;Ore Settimana;Rilevato da\n";
                 csv += csvReadings.join('\n');
                 
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -938,35 +989,72 @@
                                         <TrendingUp className="w-6 h-6 text-indigo-600" />
                                         Registro Letture Ore Display
                                     </h2>
-                                    <div className="space-y-3 max-h-96 overflow-y-auto">
-                                        {weeklyReadings.length > 0 ? (
-                                            weeklyReadings.map(reading => {
-                                                const vehicle = vehicles.find(v => v.id === reading.vehicleId);
-                                                return (
-                                                    <div key={reading.id} className="border-l-4 border-indigo-600 pl-4 py-3 bg-indigo-50 rounded-r-lg relative">
-                                                        <button
-                                                            onClick={() => deleteReading(reading.id)}
-                                                            disabled={syncing}
-                                                            className="absolute top-2 right-2 p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition disabled:opacity-50"
-                                                            title="Elimina lettura"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                        <div className="flex items-start justify-between pr-10">
-                                                            <div className="flex-1">
-                                                                <p className="font-bold text-gray-800">{vehicle?.id || reading.vehicleId}</p>
-                                                                <p className="text-sm text-gray-600">{vehicle?.marca} {vehicle?.modello}</p>
-                                                                <p className="text-xs text-gray-500">Mat: {vehicle?.matricola}</p>
-                                                                <div className="mt-2 text-sm space-y-1">
-                                                                    <p className="text-gray-600">📅 Data: {new Date(reading.date).toLocaleDateString('it-IT')}</p>
-                                                                    <p className="text-gray-600">👤 Rilevato da: {getPersonName(reading.personId)}</p>
-                                                                    <p className="text-xl font-bold text-indigo-600">⏰ {reading.hours} ore</p>
-                                                                </div>
-                                                            </div>
-                                                        </div>
+                                    <div className="space-y-6">
+                                        {getReadingsByVehicle().length > 0 ? (
+                                            getReadingsByVehicle().map(({ vehicle, readings }) => (
+                                                <div key={vehicle?.id} className="border-2 border-indigo-200 rounded-lg p-4 bg-indigo-50">
+                                                    {/* Header veicolo */}
+                                                    <div className="mb-4 pb-3 border-b-2 border-indigo-300">
+                                                        <h3 className="font-bold text-lg text-gray-800">{vehicle?.id || 'N/D'}</h3>
+                                                        <p className="text-sm text-gray-600">{vehicle?.marca} {vehicle?.modello}</p>
+                                                        <p className="text-xs text-gray-500">Matricola: {vehicle?.matricola}</p>
                                                     </div>
-                                                );
-                                            })
+
+                                                    {/* Letture del veicolo */}
+                                                    <div className="space-y-3 max-h-80 overflow-y-auto">
+                                                        {readings.map((reading, index) => {
+                                                            const previousReading = index > 0 ? readings[index - 1] : null;
+                                                            const weeklyUsage = previousReading 
+                                                                ? calculateWeeklyUsage(reading.hours, previousReading.hours)
+                                                                : 'Prima lettura';
+                                                            
+                                                            return (
+                                                                <div key={reading.id} className="bg-white border-l-4 border-indigo-600 pl-4 py-3 rounded-r-lg relative shadow-sm">
+                                                                    <button
+                                                                        onClick={() => deleteReading(reading.id)}
+                                                                        disabled={syncing}
+                                                                        className="absolute top-2 right-2 p-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg transition disabled:opacity-50"
+                                                                        title="Elimina lettura"
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4" />
+                                                                    </button>
+                                                                    <div className="pr-10">
+                                                                        <div className="flex items-center justify-between mb-2">
+                                                                            <p className="text-sm font-medium text-gray-700">
+                                                                                📅 {new Date(reading.date).toLocaleDateString('it-IT', { 
+                                                                                    weekday: 'short', 
+                                                                                    day: '2-digit', 
+                                                                                    month: '2-digit', 
+                                                                                    year: 'numeric' 
+                                                                                })}
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="grid grid-cols-2 gap-3">
+                                                                            <div>
+                                                                                <p className="text-xs text-gray-500">Ore Display</p>
+                                                                                <p className="text-xl font-bold text-indigo-600">{reading.hours}h</p>
+                                                                            </div>
+                                                                            <div>
+                                                                                <p className="text-xs text-gray-500">Ore Settimana</p>
+                                                                                <p className={`text-xl font-bold ${
+                                                                                    weeklyUsage === 'Prima lettura' ? 'text-gray-400' :
+                                                                                    weeklyUsage.includes('Errore') ? 'text-red-600' :
+                                                                                    'text-green-600'
+                                                                                }`}>
+                                                                                    {weeklyUsage === 'Prima lettura' ? '--:--' : weeklyUsage}
+                                                                                </p>
+                                                                            </div>
+                                                                        </div>
+                                                                        <p className="text-xs text-gray-600 mt-2">
+                                                                            👤 Rilevato da: {getPersonName(reading.personId)}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            ))
                                         ) : (
                                             <p className="text-gray-500 text-center py-8 text-base">Nessuna lettura registrata</p>
                                         )}
